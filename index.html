@@ -36,25 +36,52 @@
       pointer-events: none;
     }
     #mensaje {
+  position: fixed;
+  top: 40%;
+  width: 100%;
+  text-align: center;
+  font-size: 2em;
+  color: #ffb6c1;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+    #overlay {
       position: fixed;
-      top: 40%;
-      width: 100%;
-      text-align: center;
-      font-size: 2em;
-      color: #ffb6c1;
-      z-index: 2;
-      pointer-events: none;
-      opacity: 1;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8em;
+      z-index: 100;
+      cursor: pointer;
     }
-  </style>
+  .char {
+  display: inline-block;
+  animation: glow 0.3s ease forwards;
+}
+@keyframes glow {
+  from {
+    text-shadow: 0 0 0px #fff;
+  }
+  to {
+    text-shadow: 0 0 10px #ff8ecb, 0 0 20px #ffc4dd;
+  }
+}
+</style>
 </head>
 <body>
+  <div id="overlay">Toca la pantalla para comenzar 💖</div>
   <div id="display"></div>
-  <div id="mensaje">Buenos días, mi princesa. Te extrañé mucho, mi niña hermosa. Espero que hayas dormido como un angelito. Eres mi alegría y mi sol cada mañana. 💖</div>
-  <audio id="audio" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" autoplay loop style="display:none;"></audio>
+  <div id="mensaje"></div>
+  <audio id="audio" src="https://github.com/gonzalezwerner/buenosdiasmivida/raw/refs/heads/main/Neztor%20MVL%20-%20Suyo%20(VIDEO%20OFICIAL)%20(mp3cut.net)(1).mp3" autoplay loop style="display:none;"></audio>
   <script>
-    const regl = createREGL({ container: '#display' });
-    const { mat4 } = glMatrix;
+    const mensajeDiv = document.getElementById('mensaje');
+    const overlay = document.getElementById('overlay');
     const audio = document.getElementById('audio');
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const source = ctx.createMediaElementSource(audio);
@@ -64,17 +91,31 @@
     analyser.fftSize = 128;
     const data = new Uint8Array(analyser.frequencyBinCount);
     let beat = 1;
-    function updateBeat() {
-      analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      beat = 1 + avg / 256;
-      requestAnimationFrame(updateBeat);
-    }
-    document.addEventListener('click', () => {
+    let initialized = false;
+
+    overlay.addEventListener('click', () => {
+      overlay.style.display = 'none';
       ctx.resume();
       audio.play();
+      mensajeDiv.style.opacity = 1;
+        mensajeDiv.style.transform = 'translateY(0)';
+        mensajeDiv.style.transform = 'translateY(0)';
+      mostrarMensaje();
+      initialized = true;
     });
+
+    function updateBeat() {
+      if (initialized) {
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        beat = 1 + avg / 256;
+      }
+      requestAnimationFrame(updateBeat);
+    }
     updateBeat();
+
+    const regl = createREGL({ container: '#display' });
+    const { mat4 } = glMatrix;
     function heart2D(t) {
       const x = 16 * Math.pow(Math.sin(t), 3);
       const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
@@ -100,16 +141,40 @@
       const len = Math.hypot(p[0], p[1], p[2]);
       return len > 0 ? [p[0]/len, p[1]/len, p[2]/len] : [0, 0, 1];
     });
-    const HEARTS = 30;
-    const hearts = Array(HEARTS).fill().map(() => ({
+    let HEARTS = 30;
+let particles = [];
+    let hearts = [];
+    function generateHearts() {
+  hearts = Array(HEARTS).fill().map(() => {
+    const baseY = -2;
+    const floatOffset = Math.random() * 0.5;
+    return {
       pos: [
         (Math.random() - 0.5) * 10,
-        (Math.random() - 0.5) * 5,
+        baseY + floatOffset,
         (Math.random() - 0.5) * 10
       ],
       rotSpeed: Math.random() * 0.01 + 0.005,
-      phase: Math.random() * Math.PI * 2
-    }));
+      phase: Math.random() * Math.PI * 2,
+      floatSpeed: 0.005 + Math.random() * 0.01
+    };
+  });
+
+  // Crear partículas tipo confetti (mini corazones que estallan)
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      pos: [0, 0, 0],
+      vel: [
+        (Math.random() - 0.5) * 0.5,
+        (Math.random()) * 0.5,
+        (Math.random() - 0.5) * 0.5
+      ],
+      color: [1.0, 0.2 + Math.random() * 0.8, 0.6 + Math.random() * 0.4],
+      life: 60
+    });
+  }
+}
+    generateHearts();
     const drawHeart = regl({
       attributes: {
         position: regl.buffer(positions),
@@ -159,11 +224,51 @@
       count: positions.length
     });
     regl.frame(() => {
-      regl.clear({ color: [0, 0, 0, 0], depth: 1 });
-      hearts.forEach(h => drawHeart(h));
+  regl.clear({ color: [0, 0, 0, 0], depth: 1 });
+  hearts.forEach(h => {
+    h.pos[1] += h.floatSpeed;
+    if (h.pos[1] > 5) h.pos[1] = -2;
+    drawHeart(h);
+  });
+
+  // Dibujar partículas como pequeños puntos
+  particles.forEach(p => {
+    p.pos[0] += p.vel[0];
+    p.pos[1] += p.vel[1];
+    p.pos[2] += p.vel[2];
+    p.life--;
+    regl.draw({
+      attributes: {
+        position: [[p.pos[0], p.pos[1], p.pos[2]]]
+      },
+      count: 1,
+      primitive: 'points',
+      uniforms: {
+        projection: mat4.perspective(mat4.create(), Math.PI / 4, window.innerWidth / window.innerHeight, 0.01, 100),
+        view: mat4.lookAt(mat4.create(), [0, 0, 10], [0, 0, 0], [0, 1, 0]),
+        color: p.color || [1, 0.5, 0.7, 1]
+      },
+      vert: `
+        precision mediump float;
+        attribute vec3 position;
+        uniform mat4 projection, view;
+        void main() {
+          gl_PointSize = 6.0;
+          gl_Position = projection * view * vec4(position, 1.0);
+        }`,
+      frag: `
+        precision mediump float;
+        uniform vec3 color;
+        void main() {
+          gl_FragColor = vec4(color, 1.0);
+        }`
     });
+  });
+  particles = particles.filter(p => p.life > 0);
+});
+
     const mensajes = [
-      "Hola mi Dorita hermosa 💖",
+      "Buenos días, mi princesa. Te extrañé mucho, mi niña hermosa. Espero que hayas dormido como un angelito. Eres mi alegría y mi sol cada mañana.💓☀️",
       "Eres mi alegría diaria 🌸",
       "Tu amor me da vida 💓",
       "Gracias por existir ✨",
@@ -175,13 +280,42 @@
       "Mi mundo empieza contigo 🌎"
     ];
     let mensajeIndex = 0;
-    const mensajeDiv = document.getElementById('mensaje');
     function mostrarMensaje() {
-      mensajeDiv.textContent = mensajes[mensajeIndex % mensajes.length];
-      mensajeIndex++;
+  mensajeDiv.style.opacity = 0;
+  mensajeDiv.style.transform = 'translateY(20px)';
+  setTimeout(() => {
+    const msg = mensajes[mensajeIndex % mensajes.length];
+    mensajeDiv.innerHTML = '';
+    mensajeDiv.setAttribute('aria-label', msg);
+    
+    if (mensajeIndex === 0) {
+      const chars = Array.from(msg); // se asegura de que los emojis se traten como una unidad
+      let i = 0;
+      const type = () => {
+        if (i < chars.length) {
+          const span = document.createElement('span');
+          const char = chars[i];
+          span.className = 'char';
+          span.innerHTML = char === ' ' ? '&nbsp;' : char;
+          mensajeDiv.appendChild(span);
+          i++;
+          setTimeout(type, 70);
+        }
+      };
+      type();
+    } else {
+      mensajeDiv.textContent = msg;
     }
+
+    mensajeIndex++;
+    generateHearts();
+    mensajeDiv.style.opacity = 1;
+    mensajeDiv.style.transform = 'translateY(0)';
+  }, 300);
+}
     let lastScroll = 0;
     window.addEventListener('scroll', () => {
+      if (!initialized) return;
       const now = window.scrollY;
       if (Math.abs(now - lastScroll) > 20) {
         mostrarMensaje();
@@ -189,6 +323,7 @@
       }
     }, { passive: true });
     document.getElementById('display').addEventListener('click', () => {
+      if (!initialized) return;
       mostrarMensaje();
     });
   </script>
