@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Para Mi Princesa Dorita 💖</title>
+  <title>Para Dorita 💖</title>
   <script src="https://cdn.jsdelivr.net/npm/regl/dist/regl.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/gl-matrix-min.js"></script>
   <style>
@@ -10,11 +10,9 @@
       margin: 0;
       padding: 0;
       width: 100%;
-      height: 100vh;
+      height:  100vh;
       overflow: hidden;
       font-family: 'Segoe UI', sans-serif;
-    }
-    body {
       background: url('https://i.imgur.com/DkY2OQB.jpeg') repeat;
       background-size: auto;
       background-attachment: fixed;
@@ -77,12 +75,14 @@
   <div id="overlay">Toca la pantalla para comenzar 💖</div>
   <div id="display"></div>
   <div id="mensaje"></div>
-  <audio id="audio" src="https://github.com/gonzalezwerner/buenosdiasmivida/raw/refs/heads/main/Neztor%20MVL%20-%20Suyo%20(VIDEO%20OFICIAL)%20(mp3cut.net)(1).mp3" autoplay loop style="display:none;"></audio>
-
+  <audio id="audio" crossorigin="anonymous"
+    src="https://cdn.jsdelivr.net/gh/gonzalezwerner/buenosdiasmivida@main/Neztor%20MVL%20-%20Suyo%20(VIDEO%20OFICIAL)%20(mp3cut.net)(1).mp3"
+    autoplay loop style="display:none;"></audio>
   <script>
     const mensajeDiv = document.getElementById('mensaje');
     const overlay = document.getElementById('overlay');
     const audio = document.getElementById('audio');
+
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const source = ctx.createMediaElementSource(audio);
     const analyser = ctx.createAnalyser();
@@ -90,8 +90,10 @@
     analyser.connect(ctx.destination);
     analyser.fftSize = 128;
     const data = new Uint8Array(analyser.frequencyBinCount);
-    let beat = 1;
+
     let initialized = false;
+    let bloqueado = false;
+    let mensajeIndex = 0;
 
     const mensajes = [
       "Buenos días, mi princesa. Te extrañé mucho, mi niña hermosa. Espero que hayas dormido como un angelito. Eres mi alegría y mi sol cada mañana. ❤️☀️",
@@ -105,60 +107,150 @@
       "Tu sonrisa es mi luz 🌟",
       "Mi mundo empieza contigo 🌎"
     ];
-    let mensajeIndex = 0;
 
-    function escribirMensajeAnimado(texto) {
-      mensajeDiv.innerHTML = '';
-      mensajeDiv.setAttribute('aria-label', texto);
-      const chars = Array.from(texto);
-      chars.forEach((char, i) => {
-        const span = document.createElement('span');
-        span.textContent = char === ' ' ? '\u00A0' : char;
-        mensajeDiv.appendChild(span);
-      });
+    const regl = createREGL({ container: '#display' });
+    const { mat4 } = glMatrix;
 
-      // 🔄 Reiniciar animaciones
-      Array.from(mensajeDiv.children).forEach((span, i) => {
-        span.classList.remove('char');
-        void span.offsetWidth;
-        span.classList.add('char');
-        span.style.animationDelay = `${i * 0.03}s`;
-      });
-
-      mensajeDiv.style.opacity = 1;
-      mensajeDiv.style.transform = 'translateY(0)';
+    function heart2D(t) {
+      const x = 16 * Math.pow(Math.sin(t), 3);
+      const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+      return [x * 0.05, y * 0.05];
     }
 
-    function mostrarMensaje() {
-      mensajeDiv.style.opacity = 0;
-      mensajeDiv.style.transform = 'translateY(20px)';
-      setTimeout(() => {
-        const msg = mensajes[mensajeIndex % mensajes.length];
-        escribirMensajeAnimado(msg);
-        mensajeIndex++;
-        generateHearts();
-      }, 300);
+    const segments = 100;
+    const depth = 0.2;
+    const front = [], back = [], sides = [];
+    for (let i = 0; i < segments; i++) {
+      const t1 = (i / segments) * Math.PI * 2;
+      const t2 = ((i + 1) / segments) * Math.PI * 2;
+      const p1 = heart2D(t1);
+      const p2 = heart2D(t2);
+      front.push([0, 0, depth], [p1[0], p1[1], depth], [p2[0], p2[1], depth]);
+      back.push([0, 0, -depth], [p2[0], p2[1], -depth], [p1[0], p1[1], -depth]);
+      sides.push(
+        [p1[0], p1[1], depth], [p2[0], p2[1], depth], [p2[0], p2[1], -depth],
+        [p1[0], p1[1], depth], [p2[0], p2[1], -depth], [p1[0], p1[1], -depth]
+      );
     }
 
-    overlay.addEventListener('click', () => {
-      overlay.style.display = 'none';
-      ctx.resume();
-      audio.play();
-
-      // Esperar para evitar conflicto visual al ocultar overlay
-      setTimeout(() => {
-        escribirMensajeAnimado(mensajes[mensajeIndex % mensajes.length]);
-        mensajeIndex++;
-        generateHearts();
-        initialized = true;
-      }, 100);
+    const positions = [...front, ...back, ...sides];
+    const normals = positions.map(p => {
+      const len = Math.hypot(p[0], p[1], p[2]);
+      return len > 0 ? [p[0]/len, p[1]/len, p[2]/len] : [0, 0, 1];
     });
 
-    document.body.addEventListener('click', () => {
-      if (!initialized) return;
-      mostrarMensaje();
+    let hearts = [], particles = [];
+    function generateHearts() {
+      hearts = Array(30).fill().map(() => ({
+        pos: [(Math.random() - 0.5) * 10, -2 + Math.random(), (Math.random() - 0.5) * 10],
+        rotSpeed: Math.random() * 0.01 + 0.005,
+        phase: Math.random() * Math.PI * 2,
+        floatSpeed: 0.005 + Math.random() * 0.01
+      }));
+
+      for (let i = 0; i < 60; i++) {
+        particles.push({
+          pos: [0, 0, 0],
+          vel: [(Math.random() - 0.5) * 0.5, Math.random() * 0.5, (Math.random() - 0.5) * 0.5],
+          color: [1.0, 0.2 + Math.random() * 0.8, 0.6 + Math.random() * 0.4],
+          life: 60
+        });
+      }
+    }
+
+    const drawHeart = regl({
+      attributes: {
+        position: regl.buffer(positions),
+        normal: regl.buffer(normals)
+      },
+      uniforms: {
+        projection: ({viewportWidth, viewportHeight}) =>
+          mat4.perspective(mat4.create(), Math.PI / 4, viewportWidth / viewportHeight, 0.01, 100),
+        view: () => {
+          const t = performance.now() * 0.001;
+          return mat4.lookAt(mat4.create(), [10 * Math.sin(t*0.3), 4, 10 * Math.cos(t*0.3)], [0, 0, 0], [0, 1, 0]);
+        },
+        model: (_, props) => {
+          const t = performance.now() * 0.001;
+          const scale = 0.5 + 0.3 * beat * Math.sin(t * 3 + props.phase);
+          let m = mat4.create();
+          mat4.translate(m, m, props.pos);
+          mat4.rotateY(m, m, t * props.rotSpeed * 100);
+          mat4.scale(m, m, [scale, scale, scale]);
+          return m;
+        },
+        lightDir: [0.0, 1.0, 1.0]
+      },
+      vert: `
+        precision mediump float;
+        attribute vec3 position, normal;
+        uniform mat4 projection, view, model;
+        varying vec3 vNormal;
+        void main() {
+          vec4 world = model * vec4(position, 1.0);
+          vNormal = mat3(model) * normal;
+          gl_Position = projection * view * world;
+        }`,
+      frag: `
+        precision mediump float;
+        varying vec3 vNormal;
+        uniform vec3 lightDir;
+        void main() {
+          vec3 normal = normalize(vNormal);
+          vec3 light = normalize(lightDir);
+          float diff = max(dot(normal, light), 0.0);
+          vec3 ambient = vec3(0.2);
+          vec3 baseColor = vec3(1.0, 0.2, 0.2);
+          vec3 color = baseColor * diff + ambient;
+          gl_FragColor = vec4(color, 1.0);
+        }`,
+      count: positions.length
     });
 
+    function render() {
+      regl.clear({ color: [0, 0, 0, 0], depth: 1 });
+      hearts.forEach(h => {
+        h.pos[1] += h.floatSpeed;
+        if (h.pos[1] > 5) h.pos[1] = -2;
+        drawHeart(h);
+      });
+
+      particles.forEach(p => {
+        p.pos[0] += p.vel[0];
+        p.pos[1] += p.vel[1];
+        p.pos[2] += p.vel[2];
+        p.life--;
+        regl.draw({
+          attributes: { position: [[p.pos[0], p.pos[1], p.pos[2]]] },
+          count: 1,
+          primitive: 'points',
+          uniforms: {
+            projection: mat4.perspective(mat4.create(), Math.PI / 4, window.innerWidth / window.innerHeight, 0.01, 100),
+            view: mat4.lookAt(mat4.create(), [0, 0, 10], [0, 0, 0], [0, 1, 0]),
+            color: p.color || [1, 0.5, 0.7, 1]
+          },
+          vert: `
+            precision mediump float;
+            attribute vec3 position;
+            uniform mat4 projection, view;
+            void main() {
+              gl_PointSize = 6.0;
+              gl_Position = projection * view * vec4(position, 1.0);
+            }`,
+          frag: `
+            precision mediump float;
+            uniform vec3 color;
+            void main() {
+              gl_FragColor = vec4(color, 1.0);
+            }`
+        });
+      });
+      particles = particles.filter(p => p.life > 0);
+      requestAnimationFrame(render);
+    }
+    render();
+
+    let beat = 1;
     function updateBeat() {
       if (initialized) {
         analyser.getByteFrequencyData(data);
@@ -169,8 +261,48 @@
     }
     updateBeat();
 
-    // Resto del código: corazones, partículas, regl...
-    // 👇 OMITIDO para brevedad si ya lo tienes funcionando bien 👇
+    function escribirMensajeAnimado(texto) {
+      mensajeDiv.innerHTML = '';
+      mensajeDiv.setAttribute('aria-label', texto);
+      mensajeDiv.style.opacity = 0;
+      mensajeDiv.style.transform = 'translateY(20px)';
+      requestAnimationFrame(() => {
+        const chars = Array.from(texto);
+        chars.forEach((char, i) => {
+          const span = document.createElement('span');
+          span.textContent = char === ' ' ? '\u00A0' : char;
+          span.className = 'char';
+          span.style.animationDelay = `${i * 0.03}s`;
+          mensajeDiv.appendChild(span);
+        });
+        requestAnimationFrame(() => {
+          mensajeDiv.style.opacity = 1;
+          mensajeDiv.style.transform = 'translateY(0)';
+        });
+      });
+    }
+
+    function mostrarSiguienteMensaje() {
+      const texto = mensajes[mensajeIndex % mensajes.length];
+      escribirMensajeAnimado(texto);
+      mensajeIndex++;
+      generateHearts();
+    }
+
+    overlay.addEventListener('click', () => {
+      overlay.style.display = 'none';
+      ctx.resume();
+      audio.play();
+      initialized = true;
+      bloqueado = true;
+      mostrarSiguienteMensaje();
+      setTimeout(() => { bloqueado = false; }, 500);
+    });
+
+    document.body.addEventListener('click', () => {
+      if (!initialized || bloqueado) return;
+      mostrarSiguienteMensaje();
+    });
   </script>
 </body>
 </html>
